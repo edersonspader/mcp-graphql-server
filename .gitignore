@@ -1,0 +1,12 @@
+# Dependencies
+/vendor/
+
+# Environment
+.env
+
+# Cache and logs
+/var/cache/
+/var/logs/
+
+# Composer
+composer.lock
