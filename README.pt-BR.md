@@ -1,6 +1,6 @@
 # MCP GraphQL Introspection Server
 
-> **[Read in English](README.md)**
+> 🇺🇸 [Read in English](README.md)
 
 Servidor MCP (Model Context Protocol) em PHP para inspecionar schemas GraphQL e recuperar informações sobre consultas, mutações e tipos disponíveis.
 
