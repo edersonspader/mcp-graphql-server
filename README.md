@@ -1,29 +1,43 @@
-# MCP GraphQL Introspection Server
+# MCP Shopify GraphQL Introspection Server
 
-> 🇧🇷 [Leia em Português](README.pt-BR.md)
+> 🇧🇷 [Leia em Português](docs/README.pt-BR.md)
 
-A PHP MCP (Model Context Protocol) server for inspecting GraphQL schemas and retrieving information about available queries, mutations, and types.
+A PHP MCP (Model Context Protocol) server optimized for LLM usage. Provides granular, paginated tools for inspecting Shopify's GraphQL Admin API schema, exploring types, and building queries — designed to return compact, readable data instead of raw introspection dumps.
 
 ## Project Structure
 
 ```
 graphql/
-├── schema/
-│   ├── schema.json               # cached __schema JSON response
-│   └── introspection.graphql     # standard introspection query
 ├── src/
-│   ├── Cache/                    # cache layer (FileCache, NullCache, CacheFactory)
-│   ├── Config.php                # environment-based configuration
-│   └── MCPGraphQLServer.php      # MCP tool logic
+│   ├── Config.php                      # environment-based configuration
+│   ├── GraphQLClient.php               # Guzzle HTTP client for GraphQL
+│   ├── GraphQLClientInterface.php      # client contract
+│   ├── SchemaRegistry.php              # schema loading, type resolution, flatten helpers
+│   └── Tools/
+│       ├── SchemaExplorerTool.php      # list queries/mutations, search, cache
+│       ├── TypeInspectorTool.php       # inspect types, enums, inputs, connections
+│       └── QueryBuilderTool.php        # query/mutation details, skeleton builder
 ├── tests/
-│   └── MCPGraphQLServerTest.php  # public method tests
+│   ├── FakeGraphQLClient.php           # test double for GraphQLClientInterface
+│   ├── fixtures/
+│   │   └── schema.json                 # static schema for tests
+│   └── Unit/
+│       ├── SchemaRegistryTest.php
+│       └── Tools/
+│           ├── SchemaExplorerToolTest.php
+│           ├── TypeInspectorToolTest.php
+│           └── QueryBuilderToolTest.php
 ├── var/
-│   ├── cache/                    # on-disk schema cache
-│   └── logs/                     # runtime logs
-├── .env.example
+│   ├── cache/                          # on-disk schema cache (gitignored)
+│   └── logs/                           # runtime logs (gitignored)
 ├── composer.json
-└── server.php                    # STDIO entrypoint
+└── server.php                          # STDIO entrypoint
 ```
+
+## Requirements
+
+- PHP 8.5 or higher
+- Composer
 
 ## Installation
 
@@ -41,13 +55,13 @@ cp .env.example .env
 
 | Environment variable | Default | Description |
 |---|---|---|
-| `GRAPHQL_URL` | — | GraphQL endpoint URL for live introspection |
-| `GRAPHQL_TOKEN` | — | Bearer token for authentication (optional) |
-| `CACHE_ENABLED` | `true` | Set to `false` to disable schema caching |
-| `CACHE_TTL` | `3600` | Cache time-to-live in seconds |
-| `INTROSPECTION_FILE` | `schema/schema.json` | Static schema file used when `GRAPHQL_URL` is not set |
+| `SHOPIFY_STORE` | — | Shopify store domain (e.g. `my-store.myshopify.com`) |
+| `SHOPIFY_ACCESS_TOKEN` | — | Shopify Admin API access token |
+| `SHOPIFY_API_VERSION` | `2025-01` | Shopify Admin API version |
 
-## Running
+## Usage
+
+### Start Server (Stdio)
 
 ```bash
 php server.php
@@ -57,53 +71,89 @@ composer serve
 
 The server uses **STDIO** transport — it reads JSON-RPC messages from `stdin`.
 
-## Available Tools
-
-| Tool | Parameters | Description |
-|---|---|---|
-| `introspection` | — | Returns the full `__schema` object |
-| `listQueries` | — | Lists fields available on the `Query` type |
-| `listMutations` | — | Lists fields available on the `Mutation` type |
-| `getType` | `name: string` (required) | Returns the full definition of a type by name |
-| `search` | `term: string` | Searches types and fields whose name contains the term |
-| `clearCache` | — | Clears the cached schema and reloads it |
-
-## Tests
-
-```bash
-composer test
-```
-
-## VS Code / GitHub Copilot Integration
-
-Add to `settings.json`:
+### Configure in Claude Desktop
 
 ```json
 {
-  "github.copilot.chat.mcp.servers": {
+  "mcpServers": {
     "graphql": {
       "command": "php",
-      "args": ["server.php"],
-      "cwd": "/app/mcp/graphql",
+      "args": ["/absolute/path/to/server.php"],
       "env": {
-        "GRAPHQL_URL": "https://your-api.example.com/graphql",
-        "GRAPHQL_TOKEN": "your-bearer-token"
+        "SHOPIFY_STORE": "my-store.myshopify.com",
+        "SHOPIFY_ACCESS_TOKEN": "shpat_xxxxxxxxxxxxxxxxxxxx"
       }
     }
   }
 }
 ```
 
-Use `INTROSPECTION_FILE` in `env` to point to a different static schema:
+### Configure in VS Code
+
+Add to `.vscode/mcp.json`:
 
 ```json
-"env": {
-  "INTROSPECTION_FILE": "/path/to/another-schema.json"
+{
+  "servers": {
+    "ShopifyGraphQLIntrospection": {
+      "type": "stdio",
+      "command": "php",
+      "args": ["-dxdebug.mode=off", "server.php"],
+      "cwd": "/absolute/path/to/graphql",
+      "env": {
+        "SHOPIFY_STORE": "my-store.myshopify.com",
+        "SHOPIFY_ACCESS_TOKEN": "shpat_xxxxxxxxxxxxxxxxxxxx"
+      }
+    }
+  }
 }
+```
+
+## Available Tools
+
+### Schema Explorer
+
+| Tool | Parameters | Description |
+|---|---|---|
+| `listQueries` | `offset`, `limit`, `filter` | List queries with pagination and optional name filter |
+| `listMutations` | `offset`, `limit`, `filter` | List mutations with pagination and optional name filter |
+| `search` | `term: string` | Search types and fields by name or description (max 50 results/category) |
+| `clearCache` | — | Reload schema from endpoint or file |
+
+### Type Inspector
+
+| Tool | Parameters | Description |
+|---|---|---|
+| `listTypes` | `kind`, `offset`, `limit` | List types filtered by kind (OBJECT, ENUM, INPUT_OBJECT, etc.) |
+| `getType` | `name: string` | Get full type definition with readable field types |
+| `getEnumValues` | `name: string` | Get all values of an ENUM type |
+| `getInputFields` | `name: string` | Get all fields of an INPUT_OBJECT type |
+| `getFieldDetails` | `typeName`, `fieldName` | Get full details of a specific field with arguments |
+| `getConnections` | `typeName: string` | List connection/pagination fields (Relay pattern) |
+
+### Query Builder
+
+| Tool | Parameters | Description |
+|---|---|---|
+| `getQueryDetails` | `name: string` | Get full details of a query including args and return type fields |
+| `getMutationDetails` | `name: string` | Get full details of a mutation including args and return type fields |
+| `buildQuerySkeleton` | `operationName`, `operationType` | Generate a GraphQL query/mutation skeleton ready to adapt |
+| `getRequiredArgs` | `operationName`, `operationType` | List only required (non-null) arguments for an operation |
+
+## Testing
+
+```bash
+composer test
+```
+
+## Static Analysis
+
+```bash
+composer analyse
 ```
 
 ## Security
 
-- The Bearer token is never logged or exposed in tool responses.
+- The access token is never logged or exposed in tool responses.
 - Schema is fetched once at startup and cached; no live queries are executed during tool calls.
 - Cache files are stored locally under `var/cache/` and excluded from version control.

@@ -1,87 +1,51 @@
+#!/usr/bin/env php
 <?php
+
+declare(strict_types=1);
 
 require __DIR__ . '/vendor/autoload.php';
 
-use App\Cache\CacheFactory;
 use App\Config;
-use App\MCPGraphQLServer;
+use App\ShopifyClient;
+use App\SchemaRegistry;
+use Dotenv\Dotenv;
+use Mcp\Capability\Registry\Container;
 use Mcp\Server;
 use Mcp\Server\Transport\StdioTransport;
 use Monolog\Handler\StreamHandler;
 use Monolog\Level;
 use Monolog\Logger;
+use Psr\Log\LoggerInterface;
+use Symfony\Component\Cache\Adapter\FilesystemAdapter;
+use Symfony\Component\Cache\Psr16Cache;
 
-$config = new Config();
-$cache = CacheFactory::create($config);
+if (is_file(__DIR__ . '/.env')) {
+	Dotenv::createImmutable(__DIR__)->safeLoad();
+}
 
-$logger = new Logger('mcp-graphql');
-$logger->pushHandler(new StreamHandler(__DIR__ . '/var/logs/mcp-graphql.log', Level::Debug));
+$config = Config::fromEnv();
+$client = new ShopifyClient($config);
+$registry = new SchemaRegistry($config, $client);
 
-$serverInstance = new MCPGraphQLServer($config, $cache);
+$logger = new Logger('mcp');
+$logger->pushHandler(new StreamHandler(__DIR__ . '/var/logs/mcp.log', Level::Debug));
+
+$container = new Container();
+$container->set(Config::class, $config);
+$container->set(ShopifyClient::class, $client);
+$container->set(SchemaRegistry::class, $registry);
+$container->set(LoggerInterface::class, $logger);
+
+$discoveryCache = new Psr16Cache(new FilesystemAdapter('mcp-discovery', 3600, __DIR__ . '/var/cache'));
 
 $server = Server::builder()
-	->setServerInfo('graphql-introspection-mcp', '1.0')
+	->setServerInfo('graphql-introspection-mcp', '1.0.0')
 	->setLogger($logger)
-	->addTool(
-		fn() => $serverInstance->introspection(),
-		'introspection',
-		'Return full GraphQL introspection schema JSON',
-		null,
-		null
-	)
-	->addTool(
-		fn() => $serverInstance->listQueries(),
-		'listQueries',
-		'List available Query fields (name + description)',
-		null,
-		null
-	)
-	->addTool(
-		fn() => $serverInstance->listMutations(),
-		'listMutations',
-		'List available Mutation fields (name + description)',
-		null,
-		null
-	)
-	->addTool(
-		function (string $name) use ($serverInstance): array|string {
-			try {
-				return $serverInstance->getType($name);
-			} catch (\InvalidArgumentException $e) {
-				return 'Invalid argument: ' . $e->getMessage();
-			} catch (\RuntimeException $e) {
-				return $e->getMessage();
-			}
-		},
-		'getType',
-		'Get full type definition by name',
-		null,
-		[
-			'type' => 'object',
-			'properties' => [
-				'name' => ['type' => 'string', 'description' => 'Type name to retrieve']
-			],
-			'required' => ['name']
-		]
-	)
-	->addTool(
-		fn(string $term = '') => $serverInstance->search($term),
-		'search',
-		'Search types and fields by term',
-		null,
-		[
-			'type' => 'object',
-			'properties' => [
-				'term' => ['type' => 'string', 'description' => 'Search term (partial name)']
-			]
-		]
-	)
-	->addTool(
-		fn() => $serverInstance->clearCache(),
-		'clearCache',
-		'Clear the cached schema and reload from the GraphQL endpoint or local file',
-		null,
-		null
+	->setContainer($container)
+	->setDiscovery(
+		basePath: __DIR__,
+		scanDirs: ['src/Tools'],
+		cache: $discoveryCache,
 	)
 	->build();
 

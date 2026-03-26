@@ -1,22 +1,35 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App;
 
-class Config
+readonly class Config
 {
-	public string $graphqlUrl;
-	public string $graphqlToken;
-	public bool $cacheEnabled;
-	public int $cacheTtl;
-	public string $introspectionFile;
+	private function __construct(
+		public string $store,
+		public string $accessToken,
+		public string $apiVersion,
+	) {}
 
-	public function __construct()
+	public static function fromEnv(): self
 	{
-		$this->graphqlUrl = getenv('GRAPHQL_URL') ?: '';
-		$this->graphqlToken = getenv('GRAPHQL_TOKEN') ?: '';
-		$this->cacheEnabled = (getenv('CACHE_ENABLED') ?: 'true') !== 'false';
-		$this->cacheTtl = (int) (getenv('CACHE_TTL') ?: 3600);
-		$this->introspectionFile = getenv('INTROSPECTION_FILE')
-			?: __DIR__ . '/../schema/schema.json';
+		$store = getenv('SHOPIFY_STORE');
+		$token = getenv('SHOPIFY_ACCESS_TOKEN');
+		$version = getenv('SHOPIFY_API_VERSION') ?: '2025-01';
+
+		if ($store === false || $store === '') {
+			throw new \RuntimeException('SHOPIFY_STORE environment variable is required');
+		}
+
+		if ($token === false || $token === '') {
+			throw new \RuntimeException('SHOPIFY_ACCESS_TOKEN environment variable is required');
+		}
+
+		return new self(
+			store: $store,
+			accessToken: $token,
+			apiVersion: $version,
+		);
 	}
 }

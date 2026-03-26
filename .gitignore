@@ -1,3 +1,7 @@
+# Editor
+.vscode/
+.github/
+
 # Dependencies
 /vendor/
 
@@ -5,8 +9,7 @@
 .env
 
 # Cache and logs
-/var/cache/
-/var/logs/
+/var/
 
-# Composer
-composer.lock
+# PHPStan local override
+phpstan.neon
