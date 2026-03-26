@@ -1,5 +1,4 @@
 {
-    "name": "ederson-spader/graphql-introspection-mcp",
     "description": "MCP server for GraphQL schema introspection",
     "type": "project",
     "license": "MIT",
